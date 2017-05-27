@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package org.gradle.initialization.includedbuild;
+package org.gradle.api.tasks;
 
-import org.gradle.api.artifacts.component.BuildIdentifier;
+import org.gradle.api.Incubating;
 
-public interface IncludedBuildTaskGraph {
-    void addTask(BuildIdentifier requestingBuild, BuildIdentifier targetBuild, String taskPath);
-
-    void awaitCompletion(BuildIdentifier targetBuild, String taskPath);
-
-    boolean isComplete(BuildIdentifier targetBuild, String taskPath);
+/**
+ * A resource produced by a task. For now this is only used for tasks in another build.
+ */
+@Incubating
+public interface TaskResource {
+    boolean isComplete();
 }
