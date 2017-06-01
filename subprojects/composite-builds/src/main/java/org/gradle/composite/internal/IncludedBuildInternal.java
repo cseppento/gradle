@@ -16,7 +16,9 @@
 
 package org.gradle.composite.internal;
 
+import org.gradle.BuildListener;
 import org.gradle.BuildResult;
+import org.gradle.api.execution.TaskExecutionListener;
 import org.gradle.api.initialization.ConfigurableIncludedBuild;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
@@ -26,5 +28,5 @@ public interface IncludedBuildInternal extends ConfigurableIncludedBuild {
     DependencySubstitutionsInternal resolveDependencySubstitutions();
     SettingsInternal getLoadedSettings();
     GradleInternal getConfiguredBuild();
-    BuildResult execute(Iterable<String> tasks);
+    BuildResult execute(Iterable<String> tasks, TaskExecutionListener taskListener, BuildListener buildListener);
 }

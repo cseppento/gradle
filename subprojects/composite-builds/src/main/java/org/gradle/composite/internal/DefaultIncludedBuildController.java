@@ -18,7 +18,10 @@ package org.gradle.composite.internal;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
+import org.gradle.api.Task;
+import org.gradle.api.execution.TaskExecutionAdapter;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.initialization.includedbuild.IncludedBuildController;
 import org.gradle.internal.UncheckedException;
@@ -65,9 +68,8 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
             Set<String> tasksToExecute = getQueuedTasks();
             try {
                 doBuild(tasksToExecute);
-                buildCompleted(tasksToExecute, TaskStatus.SUCCESS, null);
             } catch (Throwable e) {
-                buildCompleted(tasksToExecute, TaskStatus.FAILED, e);
+                // Ignore: we record failure in the BuildListener during the build
             }
         }
     }
@@ -116,21 +118,51 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
         return Collections.emptySet();
     }
 
-    private void doBuild(Collection<String> tasksToExecute) {
+    private void doBuild(final Collection<String> tasksToExecute) {
         if (tasksToExecute.isEmpty()) {
             return;
         }
         LOGGER.info("Executing " + includedBuild.getName() + " tasks " + tasksToExecute);
-        includedBuild.execute(tasksToExecute);
+        includedBuild.execute(tasksToExecute, new TaskExecutionAdapter() {
+            @Override
+            public void afterExecute(Task task, org.gradle.api.tasks.TaskState state) {
+                String taskPath = task.getPath();
+                if (tasksToExecute.contains(taskPath)) {
+                    Throwable failure = state.getFailure();
+                    taskCompleted(taskPath, failure);
+                }
+            }
+        }, new BuildAdapter() {
+            @Override
+            public void buildFinished(BuildResult result) {
+                if (result.getFailure() != null) {
+                    buildFailed(tasksToExecute, result.getFailure());
+                }
+            }
+        });
     }
 
-    private void buildCompleted(Collection<String> tasksExecuted, TaskStatus status, Throwable failure) {
+    private void taskCompleted(String task, Throwable failure) {
+        lock.lock();
+        try {
+            TaskState taskState = tasks.get(task);
+            taskState.status = failure == null ? TaskStatus.SUCCESS : TaskStatus.FAILED;
+            taskState.failure = failure;
+            taskCompleted.signalAll();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void buildFailed(Collection<String> tasksExecuted, Throwable failure) {
         lock.lock();
         try {
             for (String task : tasksExecuted) {
                 TaskState taskState = tasks.get(task);
-                taskState.status = status;
-                taskState.failure = failure;
+                if (taskState.status == TaskStatus.EXECUTING) {
+                    taskState.status = TaskStatus.FAILED;
+                    taskState.failure = failure;
+                }
             }
             taskCompleted.signalAll();
         } finally {

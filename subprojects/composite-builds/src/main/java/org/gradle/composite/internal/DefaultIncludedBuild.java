@@ -18,9 +18,11 @@ package org.gradle.composite.internal;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import org.gradle.BuildListener;
 import org.gradle.BuildResult;
 import org.gradle.api.Action;
 import org.gradle.api.artifacts.DependencySubstitutions;
+import org.gradle.api.execution.TaskExecutionListener;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
 import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
@@ -119,9 +121,12 @@ public class DefaultIncludedBuild implements IncludedBuildInternal {
     }
 
     @Override
-    public BuildResult execute(Iterable<String> tasks) {
+    public BuildResult execute(Iterable<String> tasks, TaskExecutionListener taskListener, BuildListener buildListener) {
         GradleLauncher launcher = getGradleLauncher();
-        launcher.getGradle().getStartParameter().setTaskNames(tasks);
+        GradleInternal gradle = launcher.getGradle();
+        gradle.getStartParameter().setTaskNames(tasks);
+        gradle.addListener(buildListener);
+        gradle.addListener(taskListener);
         try {
             return launcher.run();
         } finally {
