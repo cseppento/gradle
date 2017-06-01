@@ -34,6 +34,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -55,7 +56,8 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
     }
 
     private final CountDownLatch started = new CountDownLatch(1);
-    private final AtomicBoolean stopped = new AtomicBoolean();
+    private final AtomicBoolean stopRequested = new AtomicBoolean();
+    private final CountDownLatch stopped = new CountDownLatch(1);
 
     @Override
     public void run() {
@@ -64,7 +66,7 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
         } catch (InterruptedException e) {
             throw UncheckedException.throwAsUncheckedException(e);
         }
-        while (!stopped.get()) {
+        while (!stopRequested.get()) {
             Set<String> tasksToExecute = getQueuedTasks();
             try {
                 doBuild(tasksToExecute);
@@ -72,6 +74,7 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
                 // Ignore: we record failure in the BuildListener during the build
             }
         }
+        stopped.countDown();
     }
 
     public void startTaskExecution() {
@@ -79,7 +82,7 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
     }
 
     public void stop() {
-        stopped.set(true);
+        stopRequested.set(true);
         started.countDown();
 
         lock.lock();
@@ -88,12 +91,21 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
         } finally {
             lock.unlock();
         }
+
+        try {
+            boolean didStop = stopped.await(10, TimeUnit.SECONDS);
+            if (!didStop) {
+                throw new RuntimeException("Timeout waiting to stop controller for " + includedBuild.getName());
+            }
+        } catch (InterruptedException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
     }
 
     private Set<String> getQueuedTasks() {
         lock.lock();
         try {
-            while (!stopped.get()) {
+            while (!stopRequested.get()) {
                 Set<String> tasksToExecute = Sets.newLinkedHashSet();
                 for (Map.Entry<String, TaskState> taskEntry : tasks.entrySet()) {
                     if (taskEntry.getValue().status == TaskStatus.QUEUED) {
